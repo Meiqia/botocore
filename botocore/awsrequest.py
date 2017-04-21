@@ -249,6 +249,7 @@ class AWSHTTPConnection(HTTPConnection):
 
 
 class AWSHTTPSConnection(VerifiedHTTPSConnection):
+    ssl_context = None
     pass
 
 
