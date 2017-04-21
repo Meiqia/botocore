@@ -24,7 +24,7 @@ if sys.version_info[:2] == (2, 6):
 
 
 setup(
-    name='botocore',
+    name='botocore-meiqia',
     version=botocore.__version__,
     description='Low-level, data-driven core of boto 3.',
     long_description=open('README.rst').read(),
