@@ -13,7 +13,6 @@
 # language governing permissions and limitations under the License.
 import sys
 import logging
-import select
 import functools
 import socket
 import inspect
@@ -24,6 +23,7 @@ from botocore.exceptions import UnseekableStreamError
 from botocore.utils import percent_encode_sequence
 from botocore.vendored.requests import models
 from botocore.vendored.requests.sessions import REDIRECT_STATI
+from botocore.vendored.requests.packages.urllib3 import util
 from botocore.vendored.requests.packages.urllib3.connection import \
     VerifiedHTTPSConnection
 from botocore.vendored.requests.packages.urllib3.connection import \
@@ -159,7 +159,7 @@ class AWSHTTPConnection(HTTPConnection):
             # set, it will trigger this custom behavior.
             logger.debug("Waiting for 100 Continue response.")
             # Wait for 1 second for the server to send a response.
-            read, write, exc = select.select([self.sock], [], [self.sock], 1)
+            read = util.wait_for_read([self.sock], 1)
             if read:
                 self._handle_expect_response(message_body)
                 return
