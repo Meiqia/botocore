@@ -41,6 +41,9 @@ class FakeSocket(object):
         self.fileclass = fileclass
         self._fp_object = None
 
+    def fileno(self):
+        return 99999
+
     def sendall(self, data):
         self.sent_data += data
 
@@ -265,13 +268,14 @@ class TestAWSHTTPConnection(unittest.TestCase):
         return conn
 
     def test_expect_100_continue_returned(self):
-        with patch('select.select') as select_mock:
+        with patch('botocore.vendored.requests.packages.urllib3.util.'
+                   'wait_for_read') as wait_for_read_mock:
             # Shows the server first sending a 100 continue response
             # then a 200 ok response.
             s = FakeSocket(b'HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\n')
             conn = AWSHTTPConnection('s3.amazonaws.com', 443)
             conn.sock = s
-            select_mock.return_value = ([s], [], [])
+            wait_for_read_mock.return_value = [s]
             conn.request('GET', '/bucket/foo', b'body',
                          {'Expect': '100-continue'})
             response = conn.getresponse()
@@ -279,13 +283,14 @@ class TestAWSHTTPConnection(unittest.TestCase):
             self.assertEqual(response.status, 200)
 
     def test_handles_expect_100_with_different_reason_phrase(self):
-        with patch('select.select') as select_mock:
+        with patch('botocore.vendored.requests.packages.urllib3.util.'
+                   'wait_for_read') as wait_for_read_mock:
             # Shows the server first sending a 100 continue response
             # then a 200 ok response.
             s = FakeSocket(b'HTTP/1.1 100 (Continue)\r\n\r\nHTTP/1.1 200 OK\r\n')
             conn = AWSHTTPConnection('s3.amazonaws.com', 443)
             conn.sock = s
-            select_mock.return_value = ([s], [], [])
+            wait_for_read_mock.return_value = [s]
             conn.request('GET', '/bucket/foo', six.BytesIO(b'body'),
                          {'Expect': '100-continue', 'Content-Length': '4'})
             response = conn.getresponse()
@@ -299,7 +304,8 @@ class TestAWSHTTPConnection(unittest.TestCase):
         # When using squid as an HTTP proxy, it will also send
         # a Connection: keep-alive header back with the 100 continue
         # response.  We need to ensure we handle this case.
-        with patch('select.select') as select_mock:
+        with patch('botocore.vendored.requests.packages.urllib3.util.'
+                   'wait_for_read') as wait_for_read_mock:
             # Shows the server first sending a 100 continue response
             # then a 500 response.  We're picking 500 to confirm we
             # actually parse the response instead of getting the
@@ -311,7 +317,7 @@ class TestAWSHTTPConnection(unittest.TestCase):
                            b'HTTP/1.1 500 Internal Service Error\r\n')
             conn = AWSHTTPConnection('s3.amazonaws.com', 443)
             conn.sock = s
-            select_mock.return_value = ([s], [], [])
+            wait_for_read_mock.return_value = [s]
             conn.request('GET', '/bucket/foo', b'body',
                          {'Expect': '100-continue'})
             response = conn.getresponse()
@@ -320,7 +326,8 @@ class TestAWSHTTPConnection(unittest.TestCase):
     def test_expect_100_continue_sends_307(self):
         # This is the case where we send a 100 continue and the server
         # immediately sends a 307
-        with patch('select.select') as select_mock:
+        with patch('botocore.vendored.requests.packages.urllib3.util.'
+                   'wait_for_read') as wait_for_read_mock:
             # Shows the server first sending a 100 continue response
             # then a 200 ok response.
             s = FakeSocket(
@@ -328,7 +335,7 @@ class TestAWSHTTPConnection(unittest.TestCase):
                 b'Location: http://example.org\r\n')
             conn = AWSHTTPConnection('s3.amazonaws.com', 443)
             conn.sock = s
-            select_mock.return_value = ([s], [], [])
+            wait_for_read_mock.return_value = [s]
             conn.request('GET', '/bucket/foo', b'body',
                          {'Expect': '100-continue'})
             response = conn.getresponse()
@@ -336,7 +343,8 @@ class TestAWSHTTPConnection(unittest.TestCase):
             self.assertEqual(response.status, 307)
 
     def test_expect_100_continue_no_response_from_server(self):
-        with patch('select.select') as select_mock:
+        with patch('botocore.vendored.requests.packages.urllib3.util.'
+                   'wait_for_read') as wait_for_read_mock:
             # Shows the server first sending a 100 continue response
             # then a 200 ok response.
             s = FakeSocket(
@@ -344,10 +352,10 @@ class TestAWSHTTPConnection(unittest.TestCase):
                 b'Location: http://example.org\r\n')
             conn = AWSHTTPConnection('s3.amazonaws.com', 443)
             conn.sock = s
-            # By settings select_mock to return empty lists, this indicates
-            # that the server did not send any response.  In this situation
-            # we should just send the request anyways.
-            select_mock.return_value = ([], [], [])
+            # By settings wait_for_read_mock to return empty lists, this
+            # indicates that the server did not send any response.
+            # In this situation we should just send the request anyways.
+            wait_for_read_mock.select.return_value = []
             conn.request('GET', '/bucket/foo', b'body',
                          {'Expect': '100-continue'})
             response = conn.getresponse()
@@ -437,14 +445,15 @@ class TestAWSHTTPConnection(unittest.TestCase):
     def test_state_reset_on_connection_close(self):
         # This simulates what urllib3 does with connections
         # in its connection pool logic.
-        with patch('select.select') as select_mock:
+        with patch('botocore.vendored.requests.packages.urllib3.util.'
+                   'wait_for_read') as wait_for_read_mock:
 
             # First fast fail with a 500 response when we first
             # send the expect header.
             s = FakeSocket(b'HTTP/1.1 500 Internal Server Error\r\n')
             conn = AWSHTTPConnection('s3.amazonaws.com', 443)
             conn.sock = s
-            select_mock.return_value = ([s], [], [])
+            wait_for_read_mock.return_value = [s]
 
             conn.request('GET', '/bucket/foo', b'body',
                         {'Expect': '100-continue'})
@@ -464,7 +473,7 @@ class TestAWSHTTPConnection(unittest.TestCase):
 
             # And we make a request, we should see the 200 response
             # that was sent back.
-            select_mock.return_value = ([new_conn], [], [])
+            wait_for_read_mock.return_value = [new_conn]
 
             conn.request('GET', '/bucket/foo', b'body',
                         {'Expect': '100-continue'})
